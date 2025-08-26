@@ -15,6 +15,9 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 AIRTABLE_API_KEY = os.getenv('AIRTABLE_API_KEY')
 AIRTABLE_BASE_ID = os.getenv('MEDIA_AIRTABLE_BASE_ID')  # New base for media files
 
+# Advanced Diarization Configuration (optional - for pyannote.audio)
+HUGGING_FACE_TOKEN = os.getenv('HUGGING_FACE_TOKEN')
+
 # File Paths
 DESKTOP_PATH = "/Users/savantlab/Desktop"
 PNG_PATH = "/Users/savantlab/png"  # Screenshots directory
