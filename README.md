@@ -59,7 +59,7 @@ sudo apt install ffmpeg
 1. **Clone or download the project:**
 ```bash
 cd ~/Desktop
-git clone <repository-url> media_ai_pipeline
+git clone https://github.com/stepheweffie/ai-media-pipeline-desktop.git media_ai_pipeline
 # Or download and extract the ZIP file
 ```
 
