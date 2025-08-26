@@ -59,13 +59,13 @@ sudo apt install ffmpeg
 1. **Clone or download the project:**
 ```bash
 cd ~/Desktop
-git clone https://github.com/stepheweffie/ai-media-pipeline-desktop.git media_ai_pipeline
+git clone https://github.com/stepheweffie/ai-media-pipeline-desktop.git
 # Or download and extract the ZIP file
 ```
 
 2. **Install Python dependencies:**
 ```bash
-cd media_ai_pipeline
+cd ai-media-pipeline-desktop
 pip install -r requirements.txt
 ```
 
@@ -184,7 +184,7 @@ results = pipeline.search_media("python code", media_type="screenshots")
 ## Directory Structure
 
 ```
-media_ai_pipeline/
+ai-media-pipeline-desktop/
 ├── config.py                 # Configuration management
 ├── screenshot_analyzer.py    # Screenshot analysis with Vision API
 ├── video_analyzer.py         # Video processing and analysis
