@@ -193,6 +193,7 @@ ai-media-pipeline-desktop/
 ├── media_pipeline.py         # Main orchestrator and CLI
 ├── requirements.txt          # Python dependencies
 ├── .env.example             # Environment variables template
+├── LICENSE                  # MIT License
 ├── README.md               # This file
 └── AIRTABLE_SCHEMA.md      # Airtable setup guide
 ```
@@ -358,7 +359,9 @@ This is a foundational system that can be extended in many ways:
 
 ## License
 
-This project is provided as-is for educational and personal use. Please respect OpenAI's usage policies and your Airtable plan limits.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Please respect OpenAI's usage policies and your Airtable plan limits when using this software.
 
 ---
 
