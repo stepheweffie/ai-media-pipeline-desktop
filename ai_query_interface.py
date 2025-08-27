@@ -10,6 +10,8 @@ import openai
 from screenshot_analyzer import ScreenshotAnalyzer
 from video_analyzer import VideoAnalyzer
 from airtable_media_manager import AirtableMediaManager
+from semantic_similarity import SemanticSimilarityEngine
+from syntactic_similarity import SyntacticSimilarityEngine
 import config
 
 # Set up logging
@@ -25,6 +27,16 @@ class AIQueryInterface:
         self.screenshot_analyzer = ScreenshotAnalyzer()
         self.video_analyzer = VideoAnalyzer()
         self.airtable_manager = AirtableMediaManager()
+        
+        # Initialize similarity engines
+        try:
+            self.semantic_engine = SemanticSimilarityEngine()
+            self.syntactic_engine = SyntacticSimilarityEngine()
+            logger.info("Similarity engines initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize similarity engines: {e}")
+            self.semantic_engine = None
+            self.syntactic_engine = None
         
         # Query types and intent detection
         self.query_patterns = {
@@ -113,7 +125,7 @@ class AIQueryInterface:
             }
     
     def handle_search_query(self, query: str, params: Dict) -> Dict:
-        """Handle search queries"""
+        """Handle search queries with similarity-based ranking"""
         try:
             search_term = ' '.join(params.get('search_terms', []))
             if not search_term:
@@ -123,7 +135,40 @@ class AIQueryInterface:
             media_type = params.get('media_type', 'all')
             content_type = params.get('content_type')
             
-            # Search in Airtable if available
+            # Try similarity-based search first if engines are available
+            similarity_results = []
+            if self.semantic_engine or self.syntactic_engine:
+                try:
+                    # Determine if this is a code/structure query for syntactic search
+                    is_code_query = any(keyword in query.lower() for keyword in 
+                                      ['code', 'function', 'class', 'variable', 'syntax', 'programming'])
+                    
+                    if is_code_query and self.syntactic_engine:
+                        similarity_results = self.syntactic_search(
+                            search_term, media_type, content_type or 'code', top_k=15
+                        )
+                    elif self.semantic_engine:
+                        similarity_results = self.semantic_search(
+                            search_term, media_type, top_k=15
+                        )
+                    
+                    # If we got good similarity results, use them
+                    if similarity_results:
+                        logger.info(f"Using similarity search, found {len(similarity_results)} results")
+                        return {
+                            'success': True,
+                            'intent': 'search',
+                            'query': query,
+                            'search_term': search_term,
+                            'search_method': 'similarity',
+                            'results_count': len(similarity_results),
+                            'results': similarity_results[:10],
+                            'message': f"Found {len(similarity_results)} similar results for '{search_term}'"
+                        }
+                except Exception as e:
+                    logger.warning(f"Similarity search failed, falling back to traditional search: {e}")
+            
+            # Fallback to traditional search
             if self.airtable_manager.enabled:
                 if content_type:
                     results = self.airtable_manager.get_media_by_content_type(content_type)
@@ -133,11 +178,22 @@ class AIQueryInterface:
                 # Local search
                 results = self.local_search(search_term, media_type, content_type)
             
+            # Apply post-processing similarity ranking if we have engines and results
+            if results and (self.semantic_engine or self.syntactic_engine):
+                try:
+                    ranked_results = self._rank_results_by_similarity(search_term, results)
+                    if ranked_results:
+                        results = ranked_results
+                        logger.info("Applied similarity-based ranking to traditional search results")
+                except Exception as e:
+                    logger.warning(f"Similarity ranking failed: {e}")
+            
             return {
                 'success': True,
                 'intent': 'search',
                 'query': query,
                 'search_term': search_term,
+                'search_method': 'traditional',
                 'results_count': len(results),
                 'results': results[:10],  # Limit to top 10
                 'message': f"Found {len(results)} results for '{search_term}'"
@@ -478,6 +534,363 @@ Respond with JSON:
         # This would query the Airtable or analyze the file directly
         # For now, return None as placeholder
         return None
+    
+    def semantic_search(self, query_text: str, media_type: str = 'all', 
+                       similarity_threshold: float = 0.7, top_k: int = 10) -> List[Dict]:
+        """Perform semantic similarity search"""
+        if not self.semantic_engine:
+            logger.warning("Semantic engine not available")
+            return []
+        
+        try:
+            # Get content items to search through
+            content_items = self._get_content_items_for_search(media_type)
+            
+            if not content_items:
+                return []
+            
+            # Perform semantic similarity search
+            similar_items = self.semantic_engine.find_similar_content(
+                query_text, content_items, similarity_threshold, top_k
+            )
+            
+            # Convert to results format
+            results = []
+            for item, score in similar_items:
+                item['similarity_score'] = score
+                item['similarity_type'] = 'semantic'
+                results.append(item)
+            
+            logger.info(f"Semantic search found {len(results)} items for query: '{query_text}'")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Semantic search error: {e}")
+            return []
+    
+    def syntactic_search(self, query_text: str, media_type: str = 'all',
+                        content_type: str = 'general', similarity_threshold: float = 0.6,
+                        top_k: int = 10) -> List[Dict]:
+        """Perform syntactic similarity search"""
+        if not self.syntactic_engine:
+            logger.warning("Syntactic engine not available")
+            return []
+        
+        try:
+            # Get content items to search through
+            content_items = self._get_content_items_for_search(media_type)
+            
+            if not content_items:
+                return []
+            
+            # Perform syntactic similarity search
+            similar_items = self.syntactic_engine.find_syntactically_similar_content(
+                query_text, content_items, content_type, similarity_threshold, top_k
+            )
+            
+            # Convert to results format
+            results = []
+            for item, score in similar_items:
+                item['similarity_score'] = score
+                item['similarity_type'] = 'syntactic'
+                results.append(item)
+            
+            logger.info(f"Syntactic search found {len(results)} items for query: '{query_text}'")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Syntactic search error: {e}")
+            return []
+    
+    def hybrid_search(self, query_text: str, media_type: str = 'all',
+                     content_type: str = 'general', semantic_weight: float = 0.7,
+                     syntactic_weight: float = 0.3, top_k: int = 10) -> List[Dict]:
+        """Perform hybrid search combining semantic and syntactic similarity"""
+        if not self.semantic_engine or not self.syntactic_engine:
+            logger.warning("Similarity engines not fully available, falling back to available engine")
+            if self.semantic_engine:
+                return self.semantic_search(query_text, media_type, top_k=top_k)
+            elif self.syntactic_engine:
+                return self.syntactic_search(query_text, media_type, content_type, top_k=top_k)
+            else:
+                return []
+        
+        try:
+            # Get semantic and syntactic results
+            semantic_results = self.semantic_search(query_text, media_type, top_k=top_k*2)
+            syntactic_results = self.syntactic_search(query_text, media_type, content_type, top_k=top_k*2)
+            
+            # Combine and re-rank results
+            combined_results = {}
+            
+            # Add semantic results with weighted scores
+            for item in semantic_results:
+                item_id = self._get_item_id(item)
+                combined_results[item_id] = {
+                    'item': item,
+                    'semantic_score': item.get('similarity_score', 0),
+                    'syntactic_score': 0,
+                    'combined_score': item.get('similarity_score', 0) * semantic_weight
+                }
+            
+            # Add syntactic results with weighted scores
+            for item in syntactic_results:
+                item_id = self._get_item_id(item)
+                syntactic_score = item.get('similarity_score', 0)
+                
+                if item_id in combined_results:
+                    # Update existing item
+                    combined_results[item_id]['syntactic_score'] = syntactic_score
+                    combined_results[item_id]['combined_score'] += syntactic_score * syntactic_weight
+                else:
+                    # Add new item
+                    combined_results[item_id] = {
+                        'item': item,
+                        'semantic_score': 0,
+                        'syntactic_score': syntactic_score,
+                        'combined_score': syntactic_score * syntactic_weight
+                    }
+            
+            # Sort by combined score
+            sorted_results = sorted(
+                combined_results.values(),
+                key=lambda x: x['combined_score'],
+                reverse=True
+            )[:top_k]
+            
+            # Format final results
+            final_results = []
+            for result in sorted_results:
+                item = result['item']
+                item['similarity_score'] = result['combined_score']
+                item['semantic_score'] = result['semantic_score']
+                item['syntactic_score'] = result['syntactic_score']
+                item['similarity_type'] = 'hybrid'
+                final_results.append(item)
+            
+            logger.info(f"Hybrid search found {len(final_results)} items for query: '{query_text}'")
+            return final_results
+            
+        except Exception as e:
+            logger.error(f"Hybrid search error: {e}")
+            return []
+    
+    def find_similar_to_item(self, reference_item: Dict, media_type: str = 'all',
+                           similarity_type: str = 'hybrid', top_k: int = 5) -> List[Dict]:
+        """Find items similar to a reference item"""
+        try:
+            # Extract searchable content from reference item
+            if similarity_type == 'semantic' and self.semantic_engine:
+                ref_text = self.semantic_engine._extract_searchable_text(reference_item)
+                return self.semantic_search(ref_text, media_type, top_k=top_k)
+            
+            elif similarity_type == 'syntactic' and self.syntactic_engine:
+                ref_text = self.syntactic_engine._extract_structural_content(reference_item)
+                return self.syntactic_search(ref_text, media_type, top_k=top_k)
+            
+            elif similarity_type == 'hybrid':
+                ref_text = self._extract_combined_content(reference_item)
+                return self.hybrid_search(ref_text, media_type, top_k=top_k)
+            
+            else:
+                logger.warning(f"Unsupported similarity type: {similarity_type}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error finding similar items: {e}")
+            return []
+    
+    def categorize_media_semantically(self, content_items: Optional[List[Dict]] = None) -> Dict:
+        """Categorize media items using semantic analysis"""
+        if not self.semantic_engine:
+            logger.warning("Semantic engine not available")
+            return {}
+        
+        try:
+            if content_items is None:
+                content_items = self._get_content_items_for_search('all')
+            
+            if not content_items:
+                return {}
+            
+            # Get semantic summary and categorization
+            summary = self.semantic_engine.get_content_summary(content_items)
+            
+            # Find semantic clusters
+            clusters = self.semantic_engine.find_semantic_clusters(content_items)
+            
+            return {
+                'total_items': len(content_items),
+                'semantic_summary': summary,
+                'semantic_clusters': len(clusters),
+                'cluster_details': [
+                    {
+                        'size': len(cluster),
+                        'sample_items': [self._get_item_summary(item) for item in cluster[:3]]
+                    }
+                    for cluster in clusters
+                ]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in semantic categorization: {e}")
+            return {}
+    
+    def analyze_structural_patterns(self, content_items: Optional[List[Dict]] = None) -> Dict:
+        """Analyze structural patterns using syntactic analysis"""
+        if not self.syntactic_engine:
+            logger.warning("Syntactic engine not available")
+            return {}
+        
+        try:
+            if content_items is None:
+                content_items = self._get_content_items_for_search('all')
+            
+            if not content_items:
+                return {}
+            
+            # Analyze structural patterns
+            patterns = self.syntactic_engine.find_structural_patterns(content_items)
+            
+            return patterns
+            
+        except Exception as e:
+            logger.error(f"Error in structural pattern analysis: {e}")
+            return {}
+    
+    def _get_content_items_for_search(self, media_type: str) -> List[Dict]:
+        """Get content items for similarity search"""
+        content_items = []
+        
+        try:
+            if self.airtable_manager.enabled:
+                # Get from Airtable if available
+                if media_type in ['all', 'screenshots']:
+                    screenshots = self.airtable_manager.get_all_media('screenshots')
+                    content_items.extend(screenshots)
+                
+                if media_type in ['all', 'recordings']:
+                    recordings = self.airtable_manager.get_all_media('recordings')
+                    content_items.extend(recordings)
+            else:
+                # Get from local analysis (limited for performance)
+                if media_type in ['all', 'screenshots']:
+                    png_directory = config.PNG_PATH
+                    screenshots = self.screenshot_analyzer.analyze_screenshots_in_directory(
+                        png_directory, limit=20
+                    )
+                    content_items.extend(screenshots)
+                
+                # Note: Local video analysis is expensive, so we limit it
+                if media_type in ['all', 'recordings']:
+                    mp4_directory = config.MP4_PATH
+                    recordings = self.video_analyzer.analyze_videos_in_directory(
+                        mp4_directory, limit=5
+                    )
+                    content_items.extend(recordings)
+        
+        except Exception as e:
+            logger.error(f"Error getting content items: {e}")
+        
+        return content_items
+    
+    def _get_item_id(self, item: Dict) -> str:
+        """Get unique identifier for an item"""
+        if 'metadata' in item and 'filename' in item['metadata']:
+            return item['metadata']['filename']
+        elif 'id' in item:
+            return str(item['id'])
+        else:
+            return str(hash(str(item)))
+    
+    def _extract_combined_content(self, item: Dict) -> str:
+        """Extract combined content for hybrid search"""
+        content_parts = []
+        
+        if 'analysis' in item:
+            analysis = item['analysis']
+            for field in ['summary', 'content_description', 'detected_text', 'ocr_text']:
+                if field in analysis and analysis[field]:
+                    content_parts.append(analysis[field])
+        
+        if 'metadata' in item:
+            metadata = item['metadata']
+            if 'filename' in metadata:
+                content_parts.append(metadata['filename'])
+        
+        return ' '.join(content_parts)
+    
+    def _get_item_summary(self, item: Dict) -> Dict:
+        """Get summary information for an item"""
+        summary = {}
+        
+        if 'metadata' in item:
+            metadata = item['metadata']
+            summary['filename'] = metadata.get('filename', 'Unknown')
+            summary['created'] = metadata.get('created', 'Unknown')
+        
+        if 'analysis' in item:
+            analysis = item['analysis']
+            summary['summary'] = analysis.get('summary', 'No summary')[:100]
+        
+        return summary
+    
+    def _rank_results_by_similarity(self, query_text: str, results: List[Dict]) -> List[Dict]:
+        """Rank traditional search results using similarity scores"""
+        if not results or len(results) <= 1:
+            return results
+        
+        try:
+            # Calculate similarity scores for each result
+            scored_results = []
+            
+            for result in results:
+                # Extract content for similarity calculation
+                content = self._extract_combined_content(result)
+                if not content:
+                    scored_results.append((result, 0.0))
+                    continue
+                
+                # Calculate both semantic and syntactic similarity if available
+                semantic_score = 0.0
+                syntactic_score = 0.0
+                
+                if self.semantic_engine:
+                    try:
+                        semantic_score = self.semantic_engine.calculate_semantic_similarity(
+                            query_text, content
+                        )
+                    except Exception as e:
+                        logger.debug(f"Semantic scoring failed: {e}")
+                
+                if self.syntactic_engine:
+                    try:
+                        syntactic_score = self.syntactic_engine.calculate_syntactic_similarity(
+                            query_text, content
+                        )
+                    except Exception as e:
+                        logger.debug(f"Syntactic scoring failed: {e}")
+                
+                # Combine scores (weighted toward semantic)
+                combined_score = (semantic_score * 0.7) + (syntactic_score * 0.3)
+                
+                # Add scores to result
+                result['similarity_score'] = combined_score
+                result['semantic_score'] = semantic_score
+                result['syntactic_score'] = syntactic_score
+                result['similarity_type'] = 'ranked'
+                
+                scored_results.append((result, combined_score))
+            
+            # Sort by similarity score (descending)
+            scored_results.sort(key=lambda x: x[1], reverse=True)
+            
+            # Return ranked results
+            return [result for result, score in scored_results]
+            
+        except Exception as e:
+            logger.error(f"Error ranking results by similarity: {e}")
+            return results
 
 def main():
     """Example usage"""

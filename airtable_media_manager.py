@@ -260,6 +260,68 @@ class AirtableMediaManager:
             logger.error(f"Error getting media by content type: {e}")
             return []
     
+    def get_all_media(self, media_type: str = 'all') -> List[Dict]:
+        """Get all media records for similarity search"""
+        if not self.enabled:
+            return []
+        
+        try:
+            results = []
+            
+            if media_type in ['all', 'screenshots']:
+                screenshot_records = self.screenshots_table.get_all()
+                for record in screenshot_records:
+                    # Convert Airtable record to standard format
+                    fields = record['fields']
+                    standard_record = {
+                        'metadata': {
+                            'filename': fields.get('Filename', ''),
+                            'filepath': fields.get('File Path', ''),
+                            'created': fields.get('Created At', ''),
+                            'file_size_mb': fields.get('File Size MB', 0)
+                        },
+                        'analysis': {
+                            'summary': fields.get('Summary', ''),
+                            'content_description': fields.get('Summary', ''),
+                            'detected_text': fields.get('Extracted Text', ''),
+                            'ocr_text': fields.get('Extracted Text', ''),
+                            'content_type': fields.get('Content Type', ''),
+                            'primary_application': fields.get('Primary Application', '')
+                        },
+                        'id': record['id'],
+                        'media_type': 'screenshot'
+                    }
+                    results.append(standard_record)
+            
+            if media_type in ['all', 'recordings']:
+                recording_records = self.recordings_table.get_all()
+                for record in recording_records:
+                    fields = record['fields']
+                    standard_record = {
+                        'metadata': {
+                            'filename': fields.get('Filename', ''),
+                            'filepath': fields.get('File Path', ''),
+                            'created': fields.get('Created At', ''),
+                            'duration_seconds': fields.get('Duration Seconds', 0),
+                            'file_size_mb': fields.get('File Size MB', 0)
+                        },
+                        'analysis': {
+                            'summary': fields.get('Summary', ''),
+                            'content_description': fields.get('Summary', ''),
+                            'content_type': fields.get('Content Type', ''),
+                            'primary_application': fields.get('Primary Application', '')
+                        },
+                        'id': record['id'],
+                        'media_type': 'recording'
+                    }
+                    results.append(standard_record)
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error getting all media: {e}")
+            return []
+    
     def get_media_stats(self) -> Dict:
         """Get statistics about stored media"""
         if not self.enabled:
