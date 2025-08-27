@@ -255,7 +255,12 @@ media_ai_pipeline/
 ├── README.md                   # This file
 ├── LECTURE_SETUP.md            # Detailed lecture processing guide
 ├── TESTING.md                  # Testing documentation
-└── test_*.py                   # Test files
+├── test_*.py                   # Test files
+├── d6tflow_*.py                # d6tflow pipeline components
+├── D6TFLOW_GUIDE.md            # d6tflow usage documentation
+├── D6TFLOW_IMPLEMENTATION_SUMMARY.md # d6tflow technical overview
+├── README_D6TFLOW.md           # d6tflow-specific README
+└── d6tflow_data/               # d6tflow cache directory (auto-created)
 ```
 
 ## Configuration Options
@@ -409,6 +414,38 @@ For persistent data storage and advanced querying:
 AIRTABLE_API_KEY=your_personal_access_token
 MEDIA_AIRTABLE_BASE_ID=your_base_id
 ```
+
+## d6tflow Integration 🚀
+
+The Media AI Pipeline now includes a robust d6tflow implementation, transforming it from simple scripts into a sophisticated workflow engine with dependency management, caching, error handling, and scalable processing.
+
+### Key Benefits
+- **Automatic dependency management** - Tasks only run when needed
+- **Intelligent caching** - Results are cached to avoid re-computation
+- **Error resilience** - Failed tasks don't break the entire pipeline
+- **Incremental processing** - Only process what has changed
+- **Parallel execution** - Run independent tasks concurrently
+
+### Quick Start with d6tflow
+
+```bash
+# Check system status
+python d6tflow_cli.py status
+
+# Test with screenshots (recommended first step)
+python d6tflow_cli.py run --screenshots --limit 3
+
+# Run full pipeline with custom limits
+python d6tflow_cli.py run --full \
+  --screenshot-limit 10 \
+  --video-limit 5 \
+  --lecture-limit 2
+
+# Query your media
+python d6tflow_cli.py query "screenshots with Python code"
+```
+
+For complete documentation on the d6tflow implementation, see [D6TFLOW_GUIDE.md](D6TFLOW_GUIDE.md) and [D6TFLOW_IMPLEMENTATION_SUMMARY.md](D6TFLOW_IMPLEMENTATION_SUMMARY.md).
 
 ## Performance Considerations
 
